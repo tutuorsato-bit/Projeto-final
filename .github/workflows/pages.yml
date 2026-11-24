@@ -1,0 +1,43 @@
+name: Publish ModStation frontend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure API URL
+        env:
+          MODSTATION_API_URL: ${{ vars.MODSTATION_API_URL }}
+        run: |
+          if [ -z "$MODSTATION_API_URL" ]; then
+            echo "MODSTATION_API_URL repository variable is required" >&2
+            exit 1
+          fi
+          sed -i "s|<meta name=\"modstation-api\" content=\"\">|<meta name=\"modstation-api\" content=\"${MODSTATION_API_URL%/}\">|" web/index.html
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p _site
+          cp -R web/. _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
+        id: deployment

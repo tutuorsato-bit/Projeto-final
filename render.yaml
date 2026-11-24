@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: modstation
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: CLAMD_HOST
+        sync: false
+      - key: CLAMD_PORT
+        value: "3310"
+      - key: YARA_RULES_PATH
+        value: /app/security/rules.yar
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: OBJECT_STORAGE_ENDPOINT
+        sync: false
+      - key: OBJECT_STORAGE_REGION
+        value: auto
+      - key: OBJECT_STORAGE_ACCESS_KEY
+        sync: false
+      - key: OBJECT_STORAGE_SECRET_KEY
+        sync: false

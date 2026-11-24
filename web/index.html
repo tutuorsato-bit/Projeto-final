@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111512">
+    <meta name="modstation-api" content="">
+    <meta name="description" content="Descubra, publique e acompanhe conteúdos de Minecraft com segurança no ModStation.">
+    <title>ModStation — mods, mapas e ideias</title>
+    <link rel="icon" href="./assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./assets/styles.css">
+    <script src="./assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="ModStation início">
+        <img src="./assets/mark.svg" alt="" width="34" height="34">
+        <span>mod<span class="brand-accent">station</span></span>
+      </a>
+      <nav class="primary-nav" aria-label="Navegação principal">
+        <a href="#discover">Explorar</a>
+        <a href="#categories">Categorias</a>
+        <a href="#trust">Confiança</a>
+      </nav>
+      <div class="header-actions">
+        <button class="button button-quiet" data-action="open-login">Entrar</button>
+        <button class="button button-primary button-small" data-action="open-register">Criar conta <span aria-hidden="true">↗</span></button>
+        <div class="account-menu" id="account-menu" hidden>
+          <button class="button button-quiet account-trigger" data-action="account-menu" id="account-trigger"></button>
+          <div class="account-dropdown" id="account-dropdown" hidden>
+            <a href="#account">Minha conta</a>
+            <button data-action="logout">Sair da conta</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="status-pulse"></span> A estação da comunidade Minecraft</div>
+          <h1 id="hero-title">Seu próximo<br><span class="text-gradient">mundo começa aqui.</span></h1>
+          <p>Mods, mapas e criações para Java e Bedrock — publicados por pessoas, analisados com cuidado e feitos para explorar.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#discover">Explorar criações <span aria-hidden="true">↗</span></a>
+            <button class="button button-outline" data-action="publish">Sou desenvolvedor</button>
+          </div>
+          <div class="hero-proof">
+            <span class="proof-icon" aria-hidden="true">◈</span>
+            <span><strong>Segurança em camadas</strong><small>Confiança não substitui análise de arquivo.</small></span>
+          </div>
+        </div>
+        <div class="hero-art" aria-label="Ilustração abstrata de uma estação de exploração">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="orbit orbit-three"></div>
+          <div class="planet">
+            <div class="planet-grid"></div>
+            <span class="planet-spark spark-one">✳</span>
+            <span class="planet-spark spark-two">✦</span>
+            <span class="planet-label">EXPLORE<br><b>THE UNBUILT</b></span>
+          </div>
+          <div class="art-caption"><span class="caption-line"></span><span>CURATED FOR YOUR NEXT ADVENTURE</span></div>
+          <div class="floating-tag tag-java"><span class="tag-dot"></span> JAVA EDITION</div>
+          <div class="floating-tag tag-bedrock"><span class="tag-dot"></span> BEDROCK</div>
+        </div>
+        <div class="hero-index"><span>01</span><span class="index-divider"></span><span>DESCUBRA</span></div>
+      </section>
+
+      <section class="trust-strip" id="trust" aria-label="Compromissos da plataforma">
+        <div class="trust-item"><span class="trust-mark">01</span><span><strong>Arquivos analisados</strong><small>Disponíveis somente após aprovação</small></span></div>
+        <div class="trust-item"><span class="trust-mark">02</span><span><strong>Autores transparentes</strong><small>Reputação construída com histórico</small></span></div>
+        <div class="trust-item"><span class="trust-mark">03</span><span><strong>Comunidade com voz</strong><small>Avalie, converse e denuncie</small></span></div>
+      </section>
+
+      <section class="catalog-section" id="discover">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow eyebrow-muted">A comunidade está criando</div>
+            <h2>Encontre sua próxima <span class="text-gradient">aventura.</span></h2>
+          </div>
+          <span class="catalog-count" id="catalog-count">Carregando catálogo…</span>
+        </div>
+        <form class="search-panel" id="search-form">
+          <label class="search-field">
+            <span class="sr-only">Pesquisar criações</span>
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="search-query" name="q" type="search" placeholder="Pesquise mods, mapas, criadores…" maxlength="120">
+            <kbd>ENTER</kbd>
+          </label>
+          <label class="filter-field">
+            <span class="sr-only">Edição</span>
+            <select id="edition-filter" name="edition">
+              <option value="">Todas as edições</option>
+              <option value="java">Java Edition</option>
+              <option value="bedrock">Bedrock Edition</option>
+            </select>
+          </label>
+          <label class="filter-field">
+            <span class="sr-only">Ordenação</span>
+            <input id="version-filter" name="minecraft_version" type="text" maxlength="64" placeholder="Versão (ex.: 1.21)">
+        </label>
+        <label class="filter-field">
+            <span class="sr-only">Desenvolvedor verificado</span>
+            <select id="verified-filter" name="verified_developer">
+              <option value="">Todos os criadores</option>
+              <option value="true">Identidade verificada</option>
+            </select>
+        </label>
+        <label class="filter-field">
+            <span class="sr-only">Ordenação</span>
+            <select id="sort-filter" name="sort">
+              <option value="recent">Mais recentes</option>
+              <option value="popular">Mais baixados</option>
+              <option value="rating">Melhor avaliados</option>
+            </select>
+          </label>
+          <button class="button button-primary search-submit" type="submit">Buscar <span aria-hidden="true">↗</span></button>
+        </form>
+
+        <div class="catalog-tools" id="categories">
+          <div class="category-pills" role="group" aria-label="Filtrar por categoria">
+            <button class="category-pill active" data-category="">Tudo</button>
+            <button class="category-pill" data-category="mods">Mods</button>
+            <button class="category-pill" data-category="maps">Mapas</button>
+            <button class="category-pill" data-category="resource-packs">Resource packs</button>
+            <button class="category-pill" data-category="shaders">Shaders</button>
+            <button class="category-pill" data-category="addons">Add-ons</button>
+          </div>
+          <span class="results-note" id="results-note"></span>
+        </div>
+        <div class="content-grid" id="content-grid" aria-live="polite"></div>
+        <div class="empty-state" id="empty-state" hidden>
+          <span class="empty-glyph" aria-hidden="true">⌘</span>
+          <h3 id="empty-title">Ainda não há criações publicadas.</h3>
+          <p id="empty-copy">O catálogo mostra apenas conteúdos aprovados. Volte mais tarde ou seja a primeira pessoa a publicar.</p>
+          <button class="button button-outline" data-action="publish">Conheça a publicação</button>
+        </div>
+        <div class="pagination" id="pagination" hidden>
+          <button class="button button-outline button-small" id="previous-page">← Anterior</button>
+          <span id="page-label"></span>
+          <button class="button button-outline button-small" id="next-page">Próxima →</button>
+        </div>
+      </section>
+
+      <section class="creator-banner">
+        <div class="creator-art" aria-hidden="true"><span>✳</span><i></i><b></b></div>
+        <div class="creator-copy">
+          <div class="eyebrow">Feito por quem constrói mundos</div>
+          <h2>Crie. Publique.<br><span class="text-gradient">Deixe sua marca.</span></h2>
+          <p>Seu trabalho merece um lugar à altura. Compartilhe atualizações, acompanhe análises e construa uma reputação com transparência.</p>
+          <button class="button button-primary" data-action="publish">Começar como desenvolvedor <span aria-hidden="true">↗</span></button>
+        </div>
+        <div class="banner-coordinate">MODSTATION / CREATOR PROGRAM</div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="./"><img src="./assets/mark.svg" alt="" width="27" height="27"><span>mod<span class="brand-accent">station</span></span></a>
+      <p>Uma plataforma independente da comunidade. Minecraft é uma marca da Mojang Studios.</p>
+      <span class="footer-version">JAVA + BEDROCK <i></i> MTS / MSE</span>
+    </footer>
+
+    <section class="route-page" id="content-page" hidden aria-live="polite"></section>
+    <section class="route-page account-page" id="account-page" hidden></section>
+
+    <dialog class="modal" id="auth-modal">
+      <div class="modal-shell">
+        <button class="modal-close" data-action="close-modal" aria-label="Fechar">×</button>
+        <div class="modal-brand"><img src="./assets/mark.svg" alt="" width="30" height="30"><span>mod<span class="brand-accent">station</span></span></div>
+        <div id="auth-content"></div>
+      </div>
+    </dialog>
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>
