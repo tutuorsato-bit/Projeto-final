@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import current_user, csrf_protected
+from app.dependencies import current_user, csrf_protected, optional_user
 from app.mailer import send_account_email
 from app.models import AuditLog, DeveloperProfile, OneTimeToken, User, UserSession
 from app.schemas import (
@@ -28,6 +28,7 @@ from app.security import (
     digest_token,
     get_session,
     hash_password,
+    validate_request_origin,
     verify_password,
 )
 
@@ -223,6 +224,23 @@ def me(user: User = Depends(current_user)):
             else None
         ),
     }
+
+
+@router.post("/csrf")
+def refresh_csrf_token(
+    request: Request,
+    identity: tuple[User | None, UserSession | None] = Depends(optional_user),
+    db: Session = Depends(get_db),
+):
+    user, session = identity
+    if user is None or session is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    if not validate_request_origin(request):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Request origin is not allowed")
+    csrf_token = secrets.token_urlsafe(32)
+    session.csrf_hash = digest_token(csrf_token)
+    db.commit()
+    return {"csrf_token": csrf_token}
 
 
 @router.post("/verify-email")

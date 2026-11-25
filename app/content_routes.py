@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import uuid
-import io
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -38,6 +39,26 @@ from app.storage import private_storage
 
 router = APIRouter(prefix="/api", tags=["catalog and publishing"])
 ALLOWED_ARCHIVES = {".jar", ".zip", ".mcpack", ".mcaddon", ".mctemplate"}
+ARCHIVE_MIME_TYPES = {
+    "application/java-archive",
+    "application/zip",
+    "application/x-java-archive",
+    "application/x-zip-compressed",
+}
+
+
+def _validate_declared_mime(content_type: str | None, *, image: bool) -> None:
+    if not content_type:
+        return
+    mime_type = content_type.partition(";")[0].strip().lower()
+    accepted = {"application/octet-stream", "binary/octet-stream"}
+    accepted.update({"image/png"} if image else ARCHIVE_MIME_TYPES)
+    if mime_type not in accepted:
+        expected = "PNG" if image else "ZIP-compatible archive"
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"Unsupported declared MIME type; expected {expected}",
+        )
 
 
 def _slugify(value: str) -> str:
@@ -462,13 +483,14 @@ def upload_release(
         or Path(original_name).suffix.lower() not in ALLOWED_ARCHIVES
     ):
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Unsupported archive format")
+    _validate_declared_mime(upload.content_type, image=False)
     key = uuid.uuid4().hex
     data = bytearray()
     hasher = hashlib.sha256()
     try:
         while chunk := upload.file.read(1024 * 1024):
             if len(data) + len(chunk) > settings.max_upload_bytes:
-                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Upload exceeds size limit")
+                raise HTTPException(413, "Upload exceeds size limit")
             hasher.update(chunk)
             data.extend(chunk)
     except (OSError, HTTPException):
@@ -526,12 +548,13 @@ def upload_cover_image(
         or Path(original_name).suffix.lower() != ".png"
     ):
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Only PNG cover images are supported")
+    _validate_declared_mime(upload.content_type, image=True)
     try:
         raw_image = upload.file.read(MAX_IMAGE_BYTES + 1)
     finally:
         upload.file.close()
     if len(raw_image) > MAX_IMAGE_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Image exceeds the 5 MiB limit")
+        raise HTTPException(413, "Image exceeds the 5 MiB limit")
     try:
         safe_image = sanitize_png(raw_image)
     except ValueError as exc:
@@ -612,15 +635,16 @@ def process_security_scan(file_id: int) -> None:
         )
         db.add(scan)
         if status_value == "approved":
+            storage_failure_reason = "approval_move_failed"
             try:
                 moved = private_storage.approve(release.storage_key)
             except Exception as exc:
                 moved = False
-                storage_error = type(exc).__name__
+                storage_failure_reason = type(exc).__name__
             if not moved:
                 scan.status = "inconclusive"
                 scan.scanner_results = json.dumps(
-                    {"status": "inconclusive", "results": {"storage_error": locals().get("storage_error", "approval_move_failed")}}
+                    {"status": "inconclusive", "results": {"storage_error": storage_failure_reason}}
                 )
                 status_value = "inconclusive"
         release.scan_status = status_value
@@ -852,7 +876,7 @@ def download_file(
         headers={
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store",
-            "Content-Disposition": f'attachment; filename="{file.original_name.replace(chr(34), "")}"',
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(file.original_name, safe='')}",
         },
     )
 

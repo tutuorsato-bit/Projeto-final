@@ -152,12 +152,14 @@ def _clamav_scan(path: Path) -> dict[str, object]:
             response.extend(chunk)
             if b"\0" in chunk:
                 break
-        text = response.decode("utf-8", errors="replace").strip("\0 ")
-        if text.endswith(" OK"):
+        text = response.decode("utf-8", errors="replace").strip("\0\r\n ")
+        if text == "stream: OK":
             return {"status": "clean", "engine": "clamav"}
-        if text.endswith(" FOUND"):
+        if text.startswith("stream: ") and text.endswith(" FOUND") and len(text) > len("stream:  FOUND"):
             return {"status": "threat", "engine": "clamav", "detail": text[:240]}
-        raise RuntimeError(f"ClamAV returned an unrecognized response: {text[:240]}")
+        if not text:
+            raise RuntimeError("ClamAV closed the connection without a response")
+        raise RuntimeError(f"ClamAV returned an invalid INSTREAM response: {text[:240]}")
 
 
 def _yara_scan(path: Path, original_name: str) -> dict[str, object]:
@@ -324,14 +326,14 @@ def scan_file(path: Path, original_name: str, sha256: str) -> ScanResult:
         try:
             results[engine] = scanner()
         except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
-            errors[engine] = {"type": type(exc).__name__, "message": str(exc)[:240]}
+            errors[engine] = {"type": type(exc).__name__, "message": _safe_error_message(exc)}
     vt = None
     try:
         vt = _virustotal_scan(sha256)
         if vt is not None:
             results["virustotal"] = vt
     except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
-        errors["virustotal"] = {"type": type(exc).__name__, "message": str(exc)[:240]}
+        errors["virustotal"] = {"type": type(exc).__name__, "message": _safe_error_message(exc)}
     if errors:
         results["scanner_errors"] = errors
     statuses = [
@@ -346,3 +348,11 @@ def scan_file(path: Path, original_name: str, sha256: str) -> ScanResult:
     if errors or "unknown" in statuses:
         return ScanResult("inconclusive", results)
     return ScanResult("approved", results)
+
+
+def _safe_error_message(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "Scanner request timed out"
+    if isinstance(exc, OSError):
+        return "Scanner service is unavailable"
+    return str(exc)[:240]

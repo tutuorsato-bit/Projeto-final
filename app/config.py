@@ -25,7 +25,18 @@ class Settings:
     smtp_from: str = os.getenv("SMTP_FROM", "ModStation <noreply@example.invalid>")
     allowed_origins: tuple[str, ...] = tuple(
         origin.strip().rstrip("/")
-        for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+        for origin in (
+            os.getenv("ALLOWED_ORIGINS", "").split(",")
+            + (
+                [
+                    f"https://{os.getenv('CODESPACE_NAME')}-8000."
+                    f"{os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')}"
+                ]
+                if os.getenv("CODESPACE_NAME")
+                and os.getenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")
+                else []
+            )
+        )
         if origin.strip()
     )
     api_url: str = os.getenv("API_URL", "").rstrip("/")
