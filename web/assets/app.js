@@ -5,6 +5,10 @@ const state = {
   category: "",
   currentContent: null,
   accountTab: "overview",
+  catalogTimer: null,
+  catalogController: null,
+  catalogRequest: 0,
+  csrfToken: "",
 };
 
 const API_BASE = (
@@ -28,6 +32,7 @@ function escapeHtml(value) {
 }
 
 function csrfToken() {
+  if (state.csrfToken) return state.csrfToken;
   const entry = document.cookie.split("; ").find((cookie) => cookie.startsWith("modstation_csrf="));
   return entry ? decodeURIComponent(entry.slice("modstation_csrf=".length)) : "";
 }
@@ -63,6 +68,7 @@ function toast(message, error = false) {
 
 function setUser(user) {
   state.user = user;
+  if (!user) state.csrfToken = "";
   const signedIn = Boolean(user);
   $("#account-menu").hidden = !signedIn;
   $$('[data-action="open-login"], [data-action="open-register"]').forEach((button) => {
@@ -77,6 +83,8 @@ function setUser(user) {
 async function restoreSession() {
   try {
     setUser(await api("/api/auth/me"));
+    const csrf = await api("/api/auth/csrf", { method: "POST" });
+    state.csrfToken = csrf.csrf_token;
   } catch {
     setUser(null);
   }
@@ -122,6 +130,10 @@ function cardMarkup(item, index) {
 }
 
 async function loadCatalog() {
+  state.catalogController?.abort();
+  const controller = new AbortController();
+  state.catalogController = controller;
+  const requestId = ++state.catalogRequest;
   const params = new URLSearchParams({
     page: String(state.page),
     per_page: String(state.perPage),
@@ -141,7 +153,8 @@ async function loadCatalog() {
   $("#empty-state").hidden = true;
   $("#pagination").hidden = true;
   try {
-    const page = await api(`/api/contents?${params}`);
+    const page = await api(`/api/contents?${params}`, { signal: controller.signal });
+    if (requestId !== state.catalogRequest) return;
     $("#catalog-count").textContent = `${formatNumber(page.total)} ${page.total === 1 ? "criação aprovada" : "criações aprovadas"}`;
     $("#results-note").textContent = page.total ? `${page.total} RESULTADO${page.total === 1 ? "" : "S"}` : "";
     $("#content-grid").innerHTML = page.items.map(cardMarkup).join("");
@@ -158,6 +171,7 @@ async function loadCatalog() {
     $("#previous-page").disabled = page.page <= 1;
     $("#next-page").disabled = page.page >= page.pages;
   } catch (error) {
+    if (error.name === "AbortError" || requestId !== state.catalogRequest) return;
     $("#catalog-count").textContent = "Catálogo indisponível";
     $("#empty-state").hidden = false;
     $("#empty-title").textContent = "Não foi possível carregar o catálogo.";
@@ -252,13 +266,23 @@ async function loadComments(contentId) {
     container.innerHTML = '<p class="form-hint">Ainda não há comentários. Comece uma conversa.</p>';
     return;
   }
-  container.innerHTML = comments.map((comment) => `
-    <article class="comment-item">
+  const commentNodes = new Map(comments.map((comment) => [comment.id, { ...comment, children: [] }]));
+  const roots = [];
+  for (const comment of comments) {
+    const node = commentNodes.get(comment.id);
+    const parent = commentNodes.get(comment.parent_id);
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  const renderComment = (comment) => `
+    <article class="comment-item" id="comment-${comment.id}">
       <div class="comment-heading"><strong>@${escapeHtml(comment.username)}</strong><span>${new Date(comment.created_at).toLocaleDateString("pt-BR")}</span></div>
       <p>${escapeHtml(comment.body)}</p>
       <button class="text-button" data-action="reply-comment" data-comment-id="${comment.id}" data-content-id="${contentId}">Responder</button>
       <button class="text-button" data-action="report-comment" data-comment-id="${comment.id}">Denunciar</button>
-    </article>`).join("");
+      ${comment.children.length ? `<div class="comment-replies" aria-label="Respostas">${comment.children.map((child) => renderComment(child, depth + 1)).join("")}</div>` : ""}
+    </article>`;
+  container.innerHTML = roots.map((comment) => renderComment(comment)).join("");
 }
 
 function modalForm(title, description, fields, submitText, switchText = "", switchAction = "") {
@@ -319,7 +343,8 @@ async function submitAuthForm(event) {
         $("#auth-error").innerHTML = '<div class="inline-success">Conta criada. Verifique o token enviado ao seu e-mail e depois entre.</div>';
         return;
       }
-      await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: data.email, password: data.password }) });
+      const session = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: data.email, password: data.password }) });
+      state.csrfToken = session.csrf_token;
       $("#auth-modal").close();
       await restoreSession();
       toast("Conta criada. Bem-vindo ao ModStation.");
@@ -346,7 +371,8 @@ async function submitAuthForm(event) {
       $("#auth-error").innerHTML = '<div class="inline-success">Se a conta existir, as instruções foram enviadas. <button class="text-button" type="button" data-action="open-reset">Tenho o token</button></div>';
       return;
     }
-    await api("/api/auth/login", { method: "POST", body: JSON.stringify(data) });
+    const session = await api("/api/auth/login", { method: "POST", body: JSON.stringify(data) });
+    state.csrfToken = session.csrf_token;
     $("#auth-modal").close();
     await restoreSession();
     toast("Sessão iniciada.");
@@ -655,11 +681,17 @@ async function handleClick(event) {
       toast("Denúncia enviada para revisão.");
     } else if (action === "reply-comment") {
       if (!ensureSignedIn()) return;
-      const body = window.prompt("Escreva sua resposta (máximo 2.000 caracteres):");
-      if (!body) return;
-      await api(`/api/contents/${button.dataset.contentId}/comments`, { method: "POST", body: JSON.stringify({ body, parent_id: Number(button.dataset.commentId) }) });
-      await loadComments(Number(button.dataset.contentId));
-      toast("Resposta publicada.");
+      $("#reply-form")?.remove();
+      button.insertAdjacentHTML("afterend", `
+        <form class="reply-form" id="reply-form" data-content-id="${Number(button.dataset.contentId)}" data-comment-id="${Number(button.dataset.commentId)}">
+          <label class="sr-only" for="reply-body">Sua resposta</label>
+          <textarea id="reply-body" name="body" minlength="2" maxlength="2000" required placeholder="Escreva uma resposta…"></textarea>
+          <button class="button button-primary button-small" type="submit">Responder</button>
+          <button class="text-button" type="button" data-action="cancel-reply">Cancelar</button>
+        </form>`);
+      $("#reply-body")?.focus();
+    } else if (action === "cancel-reply") {
+      button.closest("#reply-form")?.remove();
     } else if (action === "submit-content") {
       await api(`/api/contents/${button.dataset.id}/submit`, { method: "POST" });
       toast("Publicação enviada para revisão.");
@@ -758,6 +790,17 @@ async function handleSubmit(event) {
     form.reset();
     await loadComments(Number(form.dataset.contentId));
     toast("Comentário publicado.");
+  } else if (form.id === "reply-form") {
+    event.preventDefault();
+    if (!ensureSignedIn()) return;
+    const body = new FormData(form).get("body");
+    const contentId = Number(form.dataset.contentId);
+    await api(`/api/contents/${contentId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body, parent_id: Number(form.dataset.commentId) }),
+    });
+    await loadComments(contentId);
+    toast("Resposta publicada.");
   } else if (form.id === "developer-form") {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(form));
@@ -885,6 +928,15 @@ document.addEventListener("submit", (event) => {
 });
 document.addEventListener("change", (event) => {
   handleChange(event);
+});
+document.addEventListener("input", (event) => {
+  if (event.target.matches("#search-query, #version-filter")) {
+    window.clearTimeout(state.catalogTimer);
+    state.catalogTimer = window.setTimeout(() => {
+      state.page = 1;
+      loadCatalog();
+    }, 250);
+  }
 });
 $("#previous-page").addEventListener("click", () => { state.page -= 1; loadCatalog(); });
 $("#next-page").addEventListener("click", () => { state.page += 1; loadCatalog(); });

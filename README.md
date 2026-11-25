@@ -2,6 +2,25 @@
 
 Plataforma independente para descoberta, publicação e distribuição de conteúdo de Minecraft Java e Bedrock. O repositório contém uma API FastAPI, interface responsiva em HTML/CSS/JavaScript, persistência SQLAlchemy com PostgreSQL/SQLite e migrações Alembic.
 
+## Inicialização rápida validada no Codespace
+
+```bash
+cp .env.example .env
+python -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Coloque o valor gerado em `SECRET_KEY`, aplique as migrações e inicie:
+
+```bash
+set -a
+source .env
+set +a
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+O repositório também inclui `.devcontainer/devcontainer.json` e `.vscode/tasks.json`. Na criação do Codespace, `.devcontainer/setup.sh` preserva um `.env` existente, gera `SECRET_KEY` se estiver vazio e instala as dependências.
+
 ## Executar no GitHub Codespaces
 
 Python 3.11+ e pip são necessários. Docker Compose é opcional para usar PostgreSQL e ClamAV locais.
@@ -129,6 +148,16 @@ O backend grava arquivos em quarentena, move apenas para armazenamento aprovado 
 ### ClamAV e YARA
 
 O modo de produção deve manter ClamAV disponível em rede privada ou por serviço separado. `CLAMD_HOST` e `CLAMD_PORT` apontam para `clamd`. YARA usa `YARA_RULES_PATH`; a configuração fornecida é apenas inicial e deve ser revisada pela operação. Arquivos não são executados no servidor principal.
+
+Para iniciar ClamAV no Codespace ou em Docker local:
+
+```bash
+docker compose --env-file .env up -d clamav
+docker compose logs -f clamav
+docker compose ps clamav
+```
+
+O serviço só libera arquivos após responder exatamente `stream: OK`. Respostas ausentes, malformadas, timeout ou erro de rede deixam o upload inconclusivo. Uma detecção do EICAR é registrada como ameaça e bloqueada.
 
 Hospedagens gratuitas com filesystem ou instâncias temporárias não garantem persistência. Use PostgreSQL persistente e armazenamento S3 compatível. Hospedagens gratuitas podem acordar/encerrar processos, limitar memória, upload, tempo de análise e quantidade de horas: nessas condições, a plataforma continua segura, mas pode ficar indisponível ou inconclusiva.
 
