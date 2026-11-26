@@ -9,6 +9,7 @@ const state = {
   catalogController: null,
   catalogRequest: 0,
   csrfToken: "",
+  authRevision: 0,
 };
 
 const API_BASE = (
@@ -52,7 +53,9 @@ async function api(url, options = {}) {
       const payload = await response.json();
       message = typeof payload.detail === "string" ? payload.detail : message;
     } catch { /* The response may be an empty or non-JSON error. */ }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   if (response.headers.get("content-type")?.includes("application/json")) return response.json();
   return response;
@@ -66,7 +69,186 @@ function toast(message, error = false) {
   window.setTimeout(() => node.remove(), 4200);
 }
 
+function observeReveal(root = document) {
+  const targets = root.querySelectorAll('[data-reveal]:not(.reveal-ready)');
+  if (!targets.length) return;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion || !("IntersectionObserver" in window)) {
+    targets.forEach((target) => target.classList.add("reveal-ready", "is-visible"));
+    return;
+  }
+  const observer = new IntersectionObserver((entries, currentObserver) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      currentObserver.unobserve(entry.target);
+    });
+  }, { threshold: 0.12, rootMargin: "0px 0px -28px 0px" });
+  targets.forEach((target) => {
+    target.classList.add("reveal-ready");
+    observer.observe(target);
+  });
+}
+
+function initVisualExperience() {
+  const revealSelectors = [
+    ".hero-copy",
+    ".hero-art",
+    ".trust-item",
+    ".section-heading",
+    ".search-panel",
+    ".catalog-tools",
+    ".creator-banner",
+    ".site-footer",
+  ];
+  revealSelectors.forEach((selector) => {
+    $$(selector).forEach((element) => element.dataset.reveal ||= "up");
+  });
+  observeReveal();
+
+  const canvas = $("#ambient-canvas");
+  const context = canvas?.getContext("2d", { alpha: true });
+  if (!canvas || !context || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    canvas?.setAttribute("hidden", "");
+    return;
+  }
+
+  const isCoarse = window.matchMedia("(pointer: coarse)").matches;
+  const maxDpr = isCoarse ? 1 : 1.5;
+  const frameInterval = isCoarse ? 50 : 33;
+  const pointer = { x: -1000, y: -1000, active: false, timeout: 0 };
+  let width = 0;
+  let height = 0;
+  let particles = [];
+  let animationFrame = 0;
+  let lastFrame = 0;
+
+  const resize = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const count = Math.min(isCoarse ? 26 : 58, Math.max(isCoarse ? 14 : 28, Math.round((width * height) / (isCoarse ? 28000 : 19000))));
+    particles = Array.from({ length: count }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * (isCoarse ? 0.16 : 0.24),
+      vy: (Math.random() - 0.5) * (isCoarse ? 0.16 : 0.24),
+      radius: Math.random() * 1.25 + 0.55,
+      alpha: Math.random() * 0.24 + 0.12,
+    }));
+  };
+
+  const draw = (timestamp) => {
+    animationFrame = 0;
+    if (document.hidden) return;
+    if (timestamp - lastFrame < frameInterval) {
+      animationFrame = requestAnimationFrame(draw);
+      return;
+    }
+    lastFrame = timestamp;
+    context.clearRect(0, 0, width, height);
+    const linkDistance = isCoarse ? 82 : 118;
+
+    particles.forEach((particle, index) => {
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      if (particle.x < -8 || particle.x > width + 8) particle.vx *= -1;
+      if (particle.y < -8 || particle.y > height + 8) particle.vy *= -1;
+
+      if (pointer.active) {
+        const dx = particle.x - pointer.x;
+        const dy = particle.y - pointer.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 0 && distance < 115) {
+          const force = (115 - distance) / 115 * (isCoarse ? 0.12 : 0.28);
+          particle.x += dx / distance * force;
+          particle.y += dy / distance * force;
+        }
+      }
+
+      context.beginPath();
+      context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+      context.fillStyle = `rgba(150, 236, 112, ${particle.alpha})`;
+      context.fill();
+
+      for (let nextIndex = index + 1; nextIndex < particles.length; nextIndex += 1) {
+        const neighbor = particles[nextIndex];
+        const distance = Math.hypot(particle.x - neighbor.x, particle.y - neighbor.y);
+        if (distance >= linkDistance) continue;
+        context.beginPath();
+        context.moveTo(particle.x, particle.y);
+        context.lineTo(neighbor.x, neighbor.y);
+        context.strokeStyle = `rgba(117, 207, 113, ${(1 - distance / linkDistance) * 0.12})`;
+        context.lineWidth = 0.7;
+        context.stroke();
+      }
+    });
+    animationFrame = requestAnimationFrame(draw);
+  };
+
+  const wakeCanvas = () => {
+    if (!document.hidden && !animationFrame) animationFrame = requestAnimationFrame(draw);
+  };
+  const updatePointer = (event) => {
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    pointer.active = true;
+    $(".cursor-glow").classList.add("is-active");
+    document.documentElement.style.setProperty("--pointer-x", `${event.clientX}px`);
+    document.documentElement.style.setProperty("--pointer-y", `${event.clientY}px`);
+    window.clearTimeout(pointer.timeout);
+    if (isCoarse) {
+      pointer.timeout = window.setTimeout(() => {
+        pointer.active = false;
+        pointer.x = -1000;
+        pointer.y = -1000;
+        $(".cursor-glow").classList.remove("is-active");
+      }, 1100);
+    }
+  };
+
+  resize();
+  wakeCanvas();
+  window.addEventListener("resize", resize, { passive: true });
+  window.addEventListener("pointermove", (event) => {
+    if (!isCoarse && event.pointerType !== "touch") updatePointer(event);
+  }, { passive: true });
+  window.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") updatePointer(event);
+  }, { passive: true });
+  window.addEventListener("pointerleave", () => {
+    if (isCoarse) return;
+    pointer.active = false;
+    pointer.x = -1000;
+    pointer.y = -1000;
+    $(".cursor-glow").classList.remove("is-active");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && animationFrame) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    } else {
+      wakeCanvas();
+    }
+  });
+
+  let scrollFrame = 0;
+  window.addEventListener("scroll", () => {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      document.documentElement.style.setProperty("--scroll-shift", `${Math.min(window.scrollY * 0.06, 72)}px`);
+      scrollFrame = 0;
+    });
+  }, { passive: true });
+}
+
 function setUser(user) {
+  state.authRevision += 1;
   state.user = user;
   if (!user) state.csrfToken = "";
   const signedIn = Boolean(user);
@@ -77,17 +259,42 @@ function setUser(user) {
   if (user) {
     $("#account-trigger").textContent = user.username;
     $("#account-trigger").setAttribute("aria-label", `Menu da conta de ${user.username}`);
+    $("#account-trigger").setAttribute("aria-expanded", String(!$("#account-dropdown").hidden));
+  } else {
+    $("#account-dropdown").hidden = true;
+    $("#account-trigger").setAttribute("aria-expanded", "false");
   }
 }
 
 async function restoreSession() {
+  const requestRevision = state.authRevision;
+  let user;
   try {
-    setUser(await api("/api/auth/me"));
-    const csrf = await api("/api/auth/csrf", { method: "POST" });
-    state.csrfToken = csrf.csrf_token;
-  } catch {
+    user = await api("/api/auth/me");
+  } catch (error) {
+    if (state.authRevision !== requestRevision) return state.user;
     setUser(null);
+    if (error.status !== 401) {
+      toast("Não foi possível restaurar sua sessão. Verifique a conexão e recarregue a página.", true);
+    }
+    return null;
   }
+
+  if (state.authRevision !== requestRevision) return state.user;
+  setUser(user);
+  const csrfRevision = state.authRevision;
+  try {
+    const csrf = await api("/api/auth/csrf", { method: "POST" });
+    if (state.authRevision !== csrfRevision) return state.user;
+    state.csrfToken = csrf.csrf_token;
+  } catch (error) {
+    if (state.authRevision !== csrfRevision) return state.user;
+    state.csrfToken = "";
+    if (error.status !== 401) {
+      toast("Sua sessão foi restaurada, mas não foi possível atualizar a proteção da sessão. Recarregue a página antes de fazer alterações.", true);
+    }
+  }
+  return user;
 }
 
 function formatNumber(number) {
@@ -106,7 +313,7 @@ function cardMarkup(item, index) {
   const developer = item.developer?.display_name || item.developer?.username || "Desenvolvedor";
   const cover = item.images?.[0]?.url ? apiUrl(item.images[0].url) : "";
   return `
-    <article class="content-card">
+    <article class="content-card" data-spotlight data-reveal="up">
       <a href="#content/${encodeURIComponent(item.slug)}" aria-label="Ver ${escapeHtml(item.name)}">
         <div class="card-art">
           ${cover ? `<img class="card-cover" src="${escapeHtml(cover)}" alt="" loading="lazy">` : ""}
@@ -117,7 +324,7 @@ function cardMarkup(item, index) {
         <div class="card-body">
           <div class="card-heading">
             <h3 class="card-title">${escapeHtml(item.name)}</h3>
-            <span class="rating-value">★ ${Number(item.average_rating || 0).toFixed(1)}</span>
+            <span class="rating-value" title="${Number(item.rating_count || 0)} avaliações">★ ${Number(item.average_rating || 0).toFixed(1)}</span>
           </div>
           <p class="card-description">${escapeHtml(item.description)}</p>
           <div class="card-meta">
@@ -158,6 +365,7 @@ async function loadCatalog() {
     $("#catalog-count").textContent = `${formatNumber(page.total)} ${page.total === 1 ? "criação aprovada" : "criações aprovadas"}`;
     $("#results-note").textContent = page.total ? `${page.total} RESULTADO${page.total === 1 ? "" : "S"}` : "";
     $("#content-grid").innerHTML = page.items.map(cardMarkup).join("");
+    observeReveal($("#content-grid"));
     $("#empty-state").hidden = page.items.length > 0;
     $("#empty-title").textContent = query || state.category || edition || version || verified
       ? "Nenhuma criação encontrada."
@@ -327,7 +535,7 @@ function openAuth(kind) {
     $(".modal-links")?.remove();
     $("#auth-form").insertAdjacentHTML("afterend", '<div class="modal-links"><button type="button" data-action="open-forgot">Esqueci minha senha</button><button type="button" data-action="open-verify">Tenho um token de verificação</button><button type="button" data-action="request-verification">Pedir novo e-mail</button></div>');
   }
-  $("#auth-form").addEventListener("submit", submitAuthForm, { once: true });
+  $("#auth-form").addEventListener("submit", submitAuthForm);
 }
 
 async function submitAuthForm(event) {
@@ -345,9 +553,10 @@ async function submitAuthForm(event) {
       }
       const session = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: data.email, password: data.password }) });
       state.csrfToken = session.csrf_token;
+      setUser(session);
       $("#auth-modal").close();
-      await restoreSession();
       toast("Conta criada. Bem-vindo ao ModStation.");
+      if (location.hash === "#account") await openAccount("overview");
       return;
     }
     if (data.token) {
@@ -373,8 +582,8 @@ async function submitAuthForm(event) {
     }
     const session = await api("/api/auth/login", { method: "POST", body: JSON.stringify(data) });
     state.csrfToken = session.csrf_token;
+    setUser(session);
     $("#auth-modal").close();
-    await restoreSession();
     toast("Sessão iniciada.");
     if (location.hash === "#account") await openAccount("overview");
   } catch (error) {
@@ -637,6 +846,7 @@ async function handleClick(event) {
       }
     } else if (action === "account-menu") {
       $("#account-dropdown").hidden = !$("#account-dropdown").hidden;
+      button.setAttribute("aria-expanded", String(!$("#account-dropdown").hidden));
     } else if (action === "logout") {
       await api("/api/auth/logout", { method: "POST" });
       setUser(null);
@@ -908,6 +1118,7 @@ async function openDeveloper(username) {
         <div class="trust-score"><strong>${profile.trust.score} / 100</strong><small>MTS · ${escapeHtml(profile.trust.level)} · ${profile.trust.criteria.approved_publications} publicação(ões) aprovadas · ${profile.trust.criteria.account_age_days} dias de conta</small></div>
       </section>
       <section class="dashboard-card"><h2>Publicações</h2><div class="content-grid">${profile.contents.map(cardMarkup).join("") || "<p>Este perfil ainda não tem publicações disponíveis.</p>"}</div></section>`;
+    observeReveal($("#account-page"));
   } catch (error) {
     $("#account-page").innerHTML = `<a class="back-link" href="#discover">← Voltar ao catálogo</a><div class="inline-error">${escapeHtml(error.message)}</div>`;
   }
@@ -923,6 +1134,13 @@ document.addEventListener("click", (event) => {
     loadCatalog();
   }
 });
+document.addEventListener("pointermove", (event) => {
+  const card = event.target.closest("[data-spotlight]");
+  if (!card || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const bounds = card.getBoundingClientRect();
+  card.style.setProperty("--spot-x", `${event.clientX - bounds.left}px`);
+  card.style.setProperty("--spot-y", `${event.clientY - bounds.top}px`);
+}, { passive: true });
 document.addEventListener("submit", (event) => {
   handleSubmit(event).catch((error) => toast(error.message, true));
 });
@@ -946,6 +1164,7 @@ $("#auth-modal").addEventListener("click", (event) => {
 });
 
 async function start() {
+  initVisualExperience();
   await restoreSession();
   await loadCatalog();
   if (location.hash) await routeChanged();

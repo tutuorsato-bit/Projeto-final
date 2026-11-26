@@ -60,10 +60,33 @@ def small_png():
 def test_registration_login_session_and_logout(client: TestClient):
     csrf = register_and_login(client)
     assert client.get("/api/auth/me").json()["username"] == "builder"
+    assert client.get("/api/account/downloads").status_code == 200
     assert client.post("/api/auth/logout").status_code == 403
     response = client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
     assert response.status_code == 200
     assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/account/downloads").status_code == 401
+
+
+def test_login_response_contains_authenticated_user_for_immediate_frontend_state(client: TestClient):
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "email": "immediate@example.com",
+            "username": "immediate",
+            "password": "correct horse battery",
+        },
+    )
+    assert registration.status_code == 201
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "immediate@example.com", "password": "correct horse battery"},
+    )
+    assert response.status_code == 200
+    assert response.json()["username"] == "immediate"
+    assert response.json()["email"] == "immediate@example.com"
+    assert response.cookies.get("modstation_session")
+    assert client.get("/api/auth/me").json()["username"] == "immediate"
 
 
 def test_password_change_requires_current_password_and_keeps_only_active_session(client: TestClient):
@@ -190,6 +213,7 @@ def test_csrf_token_can_be_refreshed_for_a_cross_origin_frontend(client: TestCli
     assert refreshed.status_code == 200
     new_token = refreshed.json()["csrf_token"]
     assert new_token != old_token
+    assert client.cookies.get("modstation_csrf") == new_token
     assert client.post(
         "/api/auth/developer",
         json={"display_name": "Builder"},

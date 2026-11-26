@@ -45,6 +45,10 @@ def _set_session_cookies(response: Response, session_token: str, csrf_token: str
         max_age=14 * 24 * 60 * 60,
         path="/",
     )
+    _set_csrf_cookie(response, csrf_token)
+
+
+def _set_csrf_cookie(response: Response, csrf_token: str) -> None:
     response.set_cookie(
         "modstation_csrf",
         csrf_token,
@@ -168,6 +172,7 @@ def login(payload: LoginInput, response: Response, db: Session = Depends(get_db)
     _set_session_cookies(response, session_token, csrf_token)
     return {
         "id": user.id,
+        "email": user.email,
         "username": user.username,
         "role": user.role,
         "email_verified": user.email_verified,
@@ -228,6 +233,7 @@ def me(user: User = Depends(current_user)):
 
 @router.post("/csrf")
 def refresh_csrf_token(
+    response: Response,
     request: Request,
     identity: tuple[User | None, UserSession | None] = Depends(optional_user),
     db: Session = Depends(get_db),
@@ -240,6 +246,7 @@ def refresh_csrf_token(
     csrf_token = secrets.token_urlsafe(32)
     session.csrf_hash = digest_token(csrf_token)
     db.commit()
+    _set_csrf_cookie(response, csrf_token)
     return {"csrf_token": csrf_token}
 
 
